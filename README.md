@@ -42,6 +42,41 @@ Assurez-vous d'exécuter cette commande dans le répertoire racine du projet où
 C'est tout ! Vous avez maintenant configuré l'environnement et installé les dépendances nécessaires pour faire fonctionner le code.
 
 
+# Visualiser les résultats
+
+Pour visualiser les résultats de chaque partie, 2 moyens s'offre à vous:
+
+- Exécuter les notebooks:
+- Exécuter les scripts python
+
+## Notebooks
+
+Pour exécuter les notebooks, il faudra avoir installer **jupyter notebook**, 
+par la suite lancer le à travers la commande ci-dessous, après avoir activé l'environnement au préalable:
+
+```
+jupyter notebook
+```
+
+De là il vous suffira d'exécuter le notebook que vous voulez
+
+## Scripts python
+
+Pour celà à partir de la racine du projet il suffira de faire:
+
+```
+python 01_exploration/lots.py
+```
+
+Cette commande affichera les résultats de l'exploration du lots
+
+
+Les deux méthodes générerons des images pour les notebooks, elles y seront directement visible 
+mais vous pourrez les consulter aussi en allant dans le répertoire **images**
+
+Pour les scripts, vous ne pourrez les consulter qu'à partir du répertoire **images**
+
+Les images de chaque parties sont précédées par le numéro de cette partie.
 
 
 
