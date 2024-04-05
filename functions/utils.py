@@ -8,6 +8,7 @@ import matplotlib.cm as cm
 import matplotlib.colors as mcolors
 
 
+# EXPLORATION
 def load_data(path):
     """
     Function permettant de charger les données
@@ -224,4 +225,69 @@ def categorized_contractorSme(df):
     :return:
     """
     df['category'] = df['contractorSme'].apply(get_contractorSme_cat)
+    return df
+
+
+# NETTOYAGE
+
+def replace_awardDate(stats, value):
+    """
+    Methode pour remplacer les valeurs problématiques  de awardDate
+    :param value:
+    :return:
+    """
+    mode = stats['mode']
+    year = value.year
+    if np.isnan(year):
+        return mode
+    elif year < 2010:
+        return value
+    elif year > 2020:
+        return value
+    else:
+        return value
+
+
+def clean_awardDate(df):
+    """
+    Permet de nettoyer l'attribut awardDate
+    :param df:
+    :return:
+    """
+    df['awardDate'] = pd.to_datetime(df['awardDate'])
+    stats = {
+        'mode': df['awardDate'].mode()[0]
+    }
+    df['cleaned'] = df['awardDate'].apply(lambda x: replace_awardDate(stats, x))
+    return df
+
+
+def replace_awardEstimatedPrice(stats, value):
+    """
+    Methode pour calculer la class d'une valeur de awardEstimatedPrice
+    :param value:
+    :return:
+    """
+    pattern = r'^(\d)\1{3,}$'
+    median = stats['median']
+    if np.isnan(value):
+        return median
+    elif value <= 1:
+        return value
+    elif re.match(pattern, str(int(value))):
+        return value
+    else:
+        return value
+
+
+def clean_awardEstimatedPrice(df):
+    """
+    Permet de catégoriser les valeurs de l'attribut awardEstimatedPrice
+    :param df:
+    :return:
+    """
+    stats = {
+        'median': df['awardEstimatedPrice'].median()
+    }
+    df['cleaned'] = df['awardEstimatedPrice'].apply(lambda x: replace_awardEstimatedPrice(stats, x))
     return df
