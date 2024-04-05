@@ -56,9 +56,10 @@ def get_na(df, column):
     return data_df
 
 
-def plot_proportion(data, xcol, ycol, title, xtitle, ytitle, saveas, logy=True):
+def plot_proportion(data, xcol, ycol, title, xtitle, ytitle, saveas, logy=True, xrot=0):
     """
     Permet de representer les proportions de catégories de données
+    :param xrot:
     :param saveto:
     :param data:
     :param xcol:
@@ -86,7 +87,7 @@ def plot_proportion(data, xcol, ycol, title, xtitle, ytitle, saveas, logy=True):
     cbar.set_label('Couleurs')
 
     ax.bar(X, y, color=colors)
-    plt.xticks(rotation=0)
+    plt.xticks(rotation=xrot)
     if logy:
         ax.set_yscale('log')
     ax.set_title(title)
@@ -802,3 +803,55 @@ def replace_original_with_cleaned(original, column, cleaned, path):
     original[column] = cleaned
     original.to_csv(path, index=False)
     return original
+
+
+# Analyse Descriptive séparemment
+def discretize_values(df, column, bins, labels, include_lowest=True):
+    """
+    Permet de discrétiser des valeurs
+    :param df:
+    :param column:
+    :param bins:
+    :param labels:
+    :param include_lowest:
+    :return:
+    """
+    df['category'] = pd.cut(
+        df[column],
+        bins=bins,
+        labels=labels,
+        include_lowest=include_lowest
+    )
+    return df
+
+
+# Statistiques descriptives
+def get_awardDate_info(df):
+    df['awardDate'] = pd.to_datetime(df['awardDate'])
+    df['year'] = df['awardDate'].dt.year
+    df['month'] = df['awardDate'].dt.month
+    return df
+
+
+def awardDate_evolution(df, start, end, saveas):
+    data = df[(df['year'] >= start) & (df['year'] <= end)]
+    group_by_year_month = data.groupby(['year', 'month']).size()
+    group_by_year_month = group_by_year_month.reset_index(name='count')
+    group_by_year_month = group_by_year_month.sort_values(by=['year', 'month'])
+
+    # Tracer une courbe pour chaque année
+    for year in group_by_year_month['year'].unique():
+        subset = group_by_year_month[group_by_year_month['year'] == year]
+        plt.plot(subset['month'], subset['count'], marker='', label=int(year))
+
+    # Ajouter des légendes et des titres
+    plt.legend(title='Année')
+    plt.title("Evolution de l'attributions des lots par mois pour chaque année")
+    plt.xlabel('Mois')
+    plt.ylabel('Nombre de lots')
+    plt.xticks(range(1, 13))
+    plt.grid(True)
+
+    folder = os.path.dirname(saveas)
+    os.makedirs(folder, exist_ok=True)
+    plt.savefig(saveas)
