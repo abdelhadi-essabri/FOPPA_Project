@@ -1,3 +1,7 @@
+import os
+import re
+
+import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
@@ -51,9 +55,10 @@ def get_na(df, column):
     return data_df
 
 
-def plot_proportion(data, xcol, ycol, title, xtitle, ytitle, logy=True):
+def plot_proportion(data, xcol, ycol, title, xtitle, ytitle, saveas, logy=True):
     """
     Permet de representer les proportions de catégories de données
+    :param saveto:
     :param data:
     :param xcol:
     :param ycol:
@@ -87,6 +92,10 @@ def plot_proportion(data, xcol, ycol, title, xtitle, ytitle, logy=True):
     ax.set_xlabel(xtitle)
     ax.set_ylabel(ytitle)
 
+    folder = os.path.dirname(saveas)
+    os.makedirs(folder, exist_ok=True)
+    plt.savefig(saveas)
+
 
 def get_awardDate_cat(value):
     """
@@ -94,14 +103,14 @@ def get_awardDate_cat(value):
     :param value:
     :return:
     """
-    if value < 2010:
+    if np.isnan(value):
+        return 'missing'
+    elif value < 2010:
         return '< 2010'
     elif value > 2020:
         return '> 2020'
-    elif 2010 <= value <= 2020:
-        return '[2010-2020]'
     else:
-        return 'missing'
+        return '[2010-2020]'
 
 
 def categorized_awardDate(df):
@@ -115,3 +124,104 @@ def categorized_awardDate(df):
     df['category'] = df['year'].apply(get_awardDate_cat)
     return df
 
+
+def get_awardEstimatedPrice_cat(value):
+    """
+    Methode pour calculer la class d'une valeur de awardEstimatedPrice
+    :param value:
+    :return:
+    """
+    pattern = r'^(\d)\1{3,}$'
+    if np.isnan(value):
+        return 'missing'
+    elif value <= 1:
+        return '≤ 1'
+    elif re.match(pattern, str(int(value))):
+        return 'repetition'
+    else:
+        return 'correct'
+
+
+def categorized_awardEstimatedPrice(df):
+    """
+    Permet de catégoriser les valeurs de l'attribut awardEstimatedPrice
+    :param df:
+    :return:
+    """
+    df['category'] = df['awardEstimatedPrice'].apply(get_awardEstimatedPrice_cat)
+    return df
+
+
+def get_awardPrice_cat(value):
+    """
+    Methode pour calculer la class d'une valeur de awardPrice
+    :param value:
+    :return:
+    """
+    pattern = r'^(\d)\1{3,}$'
+    if np.isnan(value):
+        return 'missing'
+    elif value <= 1:
+        return '≤ 1'
+    elif re.match(pattern, str(int(value))):
+        return 'repetition'
+    else:
+        return 'correct'
+
+
+def categorized_awardPrice(df):
+    """
+    Permet de catégoriser les valeurs de l'attribut awardPrice
+    :param df:
+    :return:
+    """
+    df['category'] = df['awardPrice'].apply(get_awardPrice_cat)
+    return df
+
+
+def get_lotNumber_cat(value):
+    """
+    Méthode pour calculer la classe d'une valeur de lotsNumber
+    :param value: La valeur à évaluer
+    :return: La classe de la valeur
+    """
+    if str(value).isdigit():
+        return 'correct'
+    elif isinstance(value, (float, int)) and np.isnan(value):
+        return 'missing'
+    else:
+        return 'not numeric'
+
+
+def categorized_lotNumber(df):
+    """
+    Permet de catégoriser les valeurs de l'attribut lotsNumber
+    :param df:
+    :return:
+    """
+    df['category'] = df['lotsNumber'].apply(get_lotNumber_cat)
+    return df
+
+
+def get_contractorSme_cat(value):
+    """
+    Méthode pour calculer la classe d'une valeur de contractorSme
+    :param value: La valeur à évaluer
+    :return: La classe de la valeur
+    """
+    if isinstance(value, (float, int)) and np.isnan(value):
+        return 'missing'
+    elif value not in ['Y', 'N']:
+        return 'repetition'
+    else:
+        return 'correct'
+
+
+def categorized_contractorSme(df):
+    """
+    Permet de catégoriser les valeurs de l'attribut contractorSme
+    :param df:
+    :return:
+    """
+    df['category'] = df['contractorSme'].apply(get_contractorSme_cat)
+    return df
