@@ -6,6 +6,13 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import matplotlib.colors as mcolors
+from sklearn.cluster import KMeans
+from sklearn.compose import ColumnTransformer
+from sklearn.impute import SimpleImputer
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from tqdm import tqdm
+from scipy.stats import f_oneway, chi2_contingency
 
 
 # EXPLORATION
@@ -16,6 +23,16 @@ def load_data(path):
     :return:
     """
     return pd.read_csv(path, sep=',')
+
+
+def save_data(df, path):
+    """
+    Function permettant de sauvegarder les données
+    :param df:
+    :param path:
+    :return:
+    """
+    df.to_csv(path, index=False)
 
 
 def get_dtypes(df):
@@ -855,3 +872,210 @@ def awardDate_evolution(df, start, end, saveas):
     folder = os.path.dirname(saveas)
     os.makedirs(folder, exist_ok=True)
     plt.savefig(saveas)
+
+
+def plot_categorial_categorical(
+        data,
+        title,
+        xlabel,
+        ylabel,
+        saveas,
+        logy=True
+):
+    data.plot(kind='bar', stacked=False)
+    # Adding titles and labels
+    plt.title(title)
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    if logy:
+        plt.yscale('log')
+    plt.show()
+    folder = os.path.dirname(saveas)
+    os.makedirs(folder, exist_ok=True)
+    plt.savefig(saveas)
+
+
+def get_corr_cat_to_cat(data, cat_column_1, cat_column_2):
+    """
+    Coefficient de corrélation de cramer entre 2 variables catégorielles
+    :param data:
+    :param cat_column_1:
+    :param cat_column_2:
+    :return:
+    """
+    contingency_table = pd.crosstab(data[cat_column_1], data[cat_column_2])
+    chi2_stat, _, _, _ = chi2_contingency(contingency_table)
+    n = data.shape[0]
+    min_dim = min(contingency_table.shape) - 1
+    cramers_v = np.sqrt(chi2_stat / (n * min_dim))
+    return cramers_v
+
+
+def get_corr_cat_to_num(data, cat_column, num_column):
+    """
+    Permet de calculer la correlation entre une variable catégorielle et une variable numérique
+    :param data:
+    :param cat_column:
+    :param num_column:
+    :return:
+    """
+    grouped_data = {}
+    unique_cat = data[cat_column].unique()
+    for r in unique_cat:
+        grouped_data[r] = data[data[cat_column] == r][num_column].values
+
+    _, p_value = f_oneway(*grouped_data.values())
+    return p_value
+
+
+def get_corr_num_to_mum(data, num_column_1, num_column_2, method='spearman'):
+    """
+    Calcule la corrélation entre 2 variables numériques: 'pearson', 'kendall', 'spearman'
+    :param data:
+    :param num_column_1:
+    :param num_column_2:
+    :param method:
+    :return:
+    """
+    corr = data[num_column_1].corr(data[num_column_2], method=method)
+    return corr
+
+
+def get_all_corr_cat(data, col, num_cols, cat_cols):
+    """
+    Permet de calculer les corrélations entre une variable catégorielle et les autres
+    :param data:
+    :param col:
+    :param num_cols:
+    :param cat_cols:
+    :return:
+    """
+    result_num = []
+    for c in num_cols:
+        corr = get_corr_cat_to_num(data, cat_column=col, num_column=c)
+        result_num.append(corr)
+
+    result_cat = []
+    for c in cat_cols:
+        corr = get_corr_cat_to_cat(data, cat_column_1=col, cat_column_2=c)
+        result_cat.append(corr)
+
+    result_cat = pd.DataFrame({col: result_cat}, index=cat_cols)
+    result_num = pd.DataFrame({col: result_num}, index=num_cols)
+    return result_cat, result_num
+
+
+def get_all_corr_num(data, col, num_cols, cat_cols):
+    """
+    Permet de calculer les corrélations entre variable numérique et les autres
+    :param data:
+    :param col:
+    :param num_cols:
+    :param cat_cols:
+    :return:
+    """
+    result_num = []
+    for c in num_cols:
+        result_num.append(get_corr_num_to_mum(data, col, c))
+
+    result_cat = []
+    for c in cat_cols:
+        result_cat.append(get_corr_cat_to_num(data, col, c))
+
+    result_cat = pd.DataFrame({col: result_cat}, index=cat_cols)
+    result_num = pd.DataFrame({col: result_num}, index=num_cols)
+    return result_cat, result_num
+
+
+# Questionnement
+
+def get_processor(numeric_features, categorical_features):
+    """
+    Methode permettant de definir les transformations sur les colonnes
+    :param numeric_features: colonnes numériques
+    :param categorical_features: colonnes catégorielles
+    :return:
+    """
+    categorical_transformer = Pipeline(steps=[
+        ('ohe', OneHotEncoder(handle_unknown='ignore'))
+    ])
+    numeric_transformer = Pipeline(steps=[
+        ('scaler', StandardScaler())
+    ])
+    transformers = []
+    if numeric_features:
+        transformers.append(('num', numeric_transformer, numeric_features))
+
+    if categorical_features:
+        transformers.append(('cat', categorical_transformer, categorical_features))
+
+    preprocessor = ColumnTransformer(
+        transformers=transformers
+    )
+    return preprocessor
+
+
+def do_kmeans(data, numeric_columns, categorical_columns, k=2):
+    """
+    Permet de faire un k-means
+    :param data:
+    :param numeric_columns:
+    :param categorical_columns:
+    :param k:
+    :return:
+    """
+    preprocessor = get_processor(numeric_columns, categorical_columns)
+    pipeline = Pipeline(steps=[
+        ('preprocessor', preprocessor),
+        ('kmeans', KMeans(n_clusters=k, random_state=42))
+    ])
+    pipeline.fit(data)
+    data['cluster'] = pipeline.predict(data)
+    inertia = pipeline.named_steps['kmeans'].inertia_
+    return data, inertia
+
+
+def get_best_k(values):
+    """
+    Permet de calculer le meilleur k
+    :param values:
+    :return:
+    """
+    diff_inertie = np.diff(values)
+
+    diff_inertie = np.abs(np.diff(diff_inertie))
+
+    best_k = np.argmax(diff_inertie) + 1
+
+    return best_k
+
+
+def run_multiple_kmeans(data, numeric_columns, categorical_columns, saveas, end, start=2):
+    """
+    Permet d'exécuter plusieurs fois un k-means
+    :param saveas:
+    :param data:
+    :param numeric_columns:
+    :param categorical_columns:
+    :param end:
+    :param start:
+    :return:
+    """
+    inertia_values = []
+    k_range = range(start, end + 1)
+    for k in tqdm(range(start, end + 1)):
+        _, inertia = do_kmeans(data, numeric_columns, categorical_columns, k)
+        inertia_values.append(inertia)
+
+    plt.plot(k_range, inertia_values, marker='o')
+    plt.xlabel('Nombre de clusters')
+    plt.ylabel('Inertie')
+    plt.title(f'Méthode du coude (Elbow method) k = {start}..{end}')
+    plt.xticks(k_range)
+    plt.grid(True)
+
+    folder = os.path.dirname(saveas)
+    os.makedirs(folder, exist_ok=True)
+    plt.savefig(saveas)
+
+    return get_best_k(inertia_values) + start
