@@ -1,2 +1,11 @@
 setuptools
 pandas
+numpy
+matplotlib
+scikit-learn
+scipy
+seaborn
+tqdm
+notebook
+jupyterlab
+lime

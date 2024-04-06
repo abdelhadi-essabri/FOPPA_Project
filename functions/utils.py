@@ -8,11 +8,15 @@ import matplotlib.cm as cm
 import matplotlib.colors as mcolors
 from sklearn.cluster import KMeans
 from sklearn.compose import ColumnTransformer
+from sklearn.ensemble import IsolationForest
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.preprocessing import OneHotEncoder, StandardScaler, LabelEncoder
 from tqdm import tqdm
 from scipy.stats import f_oneway, chi2_contingency
+import seaborn as sns
+import lime
+import lime.lime_tabular
 
 
 # EXPLORATION
@@ -889,7 +893,46 @@ def plot_categorial_categorical(
     plt.ylabel(ylabel)
     if logy:
         plt.yscale('log')
-    plt.show()
+    folder = os.path.dirname(saveas)
+    os.makedirs(folder, exist_ok=True)
+    plt.savefig(saveas)
+
+
+def plot_categorial_numerical(
+        data,
+        title,
+        xlabel,
+        ylabel,
+        saveas,
+        logy=True
+):
+    sns.violinplot(data=data, x=xlabel, y=ylabel)
+    # Adding titles and labels
+    plt.title(title)
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    if logy:
+        plt.yscale('log')
+    folder = os.path.dirname(saveas)
+    os.makedirs(folder, exist_ok=True)
+    plt.savefig(saveas)
+
+
+def plot_numerical_numerical(
+        data,
+        title,
+        xlabel,
+        ylabel,
+        saveas,
+        logy=True
+):
+    sns.scatterplot(data=data, x=xlabel, y=ylabel)
+    # Adding titles and labels
+    plt.title(title)
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    if logy:
+        plt.yscale('log')
     folder = os.path.dirname(saveas)
     os.makedirs(folder, exist_ok=True)
     plt.savefig(saveas)
@@ -906,6 +949,7 @@ def get_corr_cat_to_cat(data, cat_column_1, cat_column_2):
     contingency_table = pd.crosstab(data[cat_column_1], data[cat_column_2])
     chi2_stat, _, _, _ = chi2_contingency(contingency_table)
     n = data.shape[0]
+    print(contingency_table.shape, cat_column_1, cat_column_2)
     min_dim = min(contingency_table.shape) - 1
     cramers_v = np.sqrt(chi2_stat / (n * min_dim))
     return cramers_v
@@ -951,11 +995,13 @@ def get_all_corr_cat(data, col, num_cols, cat_cols):
     :return:
     """
     result_num = []
+    num_cols = [c for c in num_cols if c != col]
     for c in num_cols:
         corr = get_corr_cat_to_num(data, cat_column=col, num_column=c)
         result_num.append(corr)
 
     result_cat = []
+    cat_cols = [c for c in cat_cols if c != col]
     for c in cat_cols:
         corr = get_corr_cat_to_cat(data, cat_column_1=col, cat_column_2=c)
         result_cat.append(corr)
@@ -976,15 +1022,26 @@ def get_all_corr_num(data, col, num_cols, cat_cols):
     """
     result_num = []
     for c in num_cols:
-        result_num.append(get_corr_num_to_mum(data, col, c))
+        result_num.append(get_corr_num_to_mum(data, num_column_1=col, num_column_2=c))
 
     result_cat = []
     for c in cat_cols:
-        result_cat.append(get_corr_cat_to_num(data, col, c))
+        result_cat.append(get_corr_cat_to_num(data, num_column=col, cat_column=c))
 
     result_cat = pd.DataFrame({col: result_cat}, index=cat_cols)
     result_num = pd.DataFrame({col: result_num}, index=num_cols)
     return result_cat, result_num
+
+
+def get_corr_data(df, xcol, ycol):
+    """
+    Données pour le graphe de corrélation
+    :param ycol:
+    :param xcol:
+    :param df:
+    :return:
+    """
+    return df.groupby([xcol, ycol]).size().unstack(fill_value=0)
 
 
 # Questionnement
@@ -1024,13 +1081,14 @@ def do_kmeans(data, numeric_columns, categorical_columns, k=2):
     :param k:
     :return:
     """
+    data_ = data.copy()
     preprocessor = get_processor(numeric_columns, categorical_columns)
     pipeline = Pipeline(steps=[
         ('preprocessor', preprocessor),
         ('kmeans', KMeans(n_clusters=k, random_state=42))
     ])
-    pipeline.fit(data)
-    data['cluster'] = pipeline.predict(data)
+    pipeline.fit(data_)
+    data['cluster'] = pipeline.predict(data_)
     inertia = pipeline.named_steps['kmeans'].inertia_
     return data, inertia
 
@@ -1079,3 +1137,114 @@ def run_multiple_kmeans(data, numeric_columns, categorical_columns, saveas, end,
     plt.savefig(saveas)
 
     return get_best_k(inertia_values) + start
+
+
+def detect_anomalies(data, numeric_columns, categorical_columns):
+    """
+    Permet de détecter dans des anomalies dans les clusters
+    :param data:
+    :param numeric_columns:
+    :param categorical_columns:
+    :return:
+    """
+    preprocessor = get_processor(numeric_columns, categorical_columns)
+    pipeline = Pipeline(steps=[
+        ('preprocessor', preprocessor),
+        ('isolation_forest', IsolationForest(random_state=42))
+    ])
+    result = data.copy()
+    clusters = result['cluster'].unique()
+    for cluster_id in clusters:
+        cluster_data = result[result['cluster'] == cluster_id]
+
+        pipeline.fit(cluster_data)
+
+        anomalies = pipeline.predict(cluster_data)
+
+        result.loc[result['cluster'] == cluster_id, 'anomaly'] = anomalies
+
+    result['anomaly'] = result['anomaly'].apply(lambda x: True if x == -1 else False)
+    return result
+
+
+def get_anomaly_cluster(data, cluserId):
+    """
+    Trouver anomalies pour un cluster spécific
+    :param data:
+    :param cluserId:
+    :return:
+    """
+    return data[(data['cluster'] == cluserId) & (data['anomaly'])]
+
+
+def get_anomaly_corr(data, clusterId, num_cols, cat_cols):
+    """
+    Trouver anomalies pour un cluster spécific
+    :param cat_cols:
+    :param num_cols:
+    :param data:
+    :param clusterId:
+    :return:
+    """
+    cluster_data = data[data['cluster'] == clusterId]
+    corr_cat, corr_num = get_all_corr_cat(
+        data=cluster_data,
+        col='anomaly',
+        num_cols=num_cols,
+        cat_cols=cat_cols
+    )
+    return corr_cat, corr_num
+
+
+def explain_anomalies(df, numeric_columns, categorical_columns, cluster_index, instance_index):
+    """
+    Explain anomalies detected by detect_anomalies function using LIME
+    :param cluster_index:  index of the cluster
+    :param df:  DataFrame containing the data
+    :param numeric_columns: List of numeric column names
+    :param categorical_columns: List of categorical column names
+    :param instance_index: Index of the instance to explain
+    :return: Explanation for the anomaly
+    """
+    feature_names = categorical_columns + numeric_columns
+    data = df[df['cluster'] == cluster_index][feature_names]
+
+    # Define the preprocessor and isolation forest
+    preprocessor = get_processor(numeric_columns, categorical_columns)
+    isolation_forest = IsolationForest(random_state=42)
+
+    # Define the pipeline
+    pipeline = Pipeline(steps=[
+        ('preprocessor', preprocessor),
+        ('isolation_forest', isolation_forest)
+    ])
+
+    # Fit the pipeline
+    pipeline.fit(data)
+    categorical_features = [feature_names.index(fn) for fn in categorical_columns]
+    categorical_names = {}
+    for col in categorical_columns:
+        if col in data.columns:
+            categories = data[col].unique().tolist()
+            categorical_names[feature_names.index(col)] = categories
+
+    label_encoders = {}
+    for col in categorical_columns:
+        label_encoders[col] = LabelEncoder()
+        data[col] = label_encoders[col].fit_transform(data[col])
+
+    # Define the LIME explainer
+    explainer = lime.lime_tabular.LimeTabularExplainer(data.values,
+                                                       feature_names=feature_names,
+                                                       categorical_features=categorical_features,
+                                                       categorical_names=categorical_names,
+                                                       class_names=['Normal', 'Anomaly'],
+                                                       random_state=42)
+
+    # Get the instance to explain
+    instance = data.loc[[instance_index]]
+    print(instance.values[0])
+    # Explain the instance
+    explanation = explainer.explain_instance(instance.values[0], pipeline.predict_proba)
+
+    return explanation
