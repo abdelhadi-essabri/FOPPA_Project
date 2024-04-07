@@ -8,11 +8,15 @@ import matplotlib.cm as cm
 import matplotlib.colors as mcolors
 from sklearn.cluster import KMeans
 from sklearn.compose import ColumnTransformer
+from sklearn.ensemble import IsolationForest
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.preprocessing import OneHotEncoder, StandardScaler, LabelEncoder
 from tqdm import tqdm
 from scipy.stats import f_oneway, chi2_contingency
+import seaborn as sns
+import lime
+import lime.lime_tabular
 
 
 # EXPLORATION
@@ -889,7 +893,46 @@ def plot_categorial_categorical(
     plt.ylabel(ylabel)
     if logy:
         plt.yscale('log')
-    plt.show()
+    folder = os.path.dirname(saveas)
+    os.makedirs(folder, exist_ok=True)
+    plt.savefig(saveas)
+
+
+def plot_categorial_numerical(
+        data,
+        title,
+        xlabel,
+        ylabel,
+        saveas,
+        logy=True
+):
+    sns.violinplot(data=data, x=xlabel, y=ylabel)
+    # Adding titles and labels
+    plt.title(title)
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    if logy:
+        plt.yscale('log')
+    folder = os.path.dirname(saveas)
+    os.makedirs(folder, exist_ok=True)
+    plt.savefig(saveas)
+
+
+def plot_numerical_numerical(
+        data,
+        title,
+        xlabel,
+        ylabel,
+        saveas,
+        logy=True
+):
+    sns.scatterplot(data=data, x=xlabel, y=ylabel)
+    # Adding titles and labels
+    plt.title(title)
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    if logy:
+        plt.yscale('log')
     folder = os.path.dirname(saveas)
     os.makedirs(folder, exist_ok=True)
     plt.savefig(saveas)
@@ -906,6 +949,7 @@ def get_corr_cat_to_cat(data, cat_column_1, cat_column_2):
     contingency_table = pd.crosstab(data[cat_column_1], data[cat_column_2])
     chi2_stat, _, _, _ = chi2_contingency(contingency_table)
     n = data.shape[0]
+    print(contingency_table.shape, cat_column_1, cat_column_2)
     min_dim = min(contingency_table.shape) - 1
     cramers_v = np.sqrt(chi2_stat / (n * min_dim))
     return cramers_v
@@ -951,11 +995,13 @@ def get_all_corr_cat(data, col, num_cols, cat_cols):
     :return:
     """
     result_num = []
+    num_cols = [c for c in num_cols if c != col]
     for c in num_cols:
         corr = get_corr_cat_to_num(data, cat_column=col, num_column=c)
         result_num.append(corr)
 
     result_cat = []
+    cat_cols = [c for c in cat_cols if c != col]
     for c in cat_cols:
         corr = get_corr_cat_to_cat(data, cat_column_1=col, cat_column_2=c)
         result_cat.append(corr)
@@ -976,15 +1022,26 @@ def get_all_corr_num(data, col, num_cols, cat_cols):
     """
     result_num = []
     for c in num_cols:
-        result_num.append(get_corr_num_to_mum(data, col, c))
+        result_num.append(get_corr_num_to_mum(data, num_column_1=col, num_column_2=c))
 
     result_cat = []
     for c in cat_cols:
-        result_cat.append(get_corr_cat_to_num(data, col, c))
+        result_cat.append(get_corr_cat_to_num(data, num_column=col, cat_column=c))
 
     result_cat = pd.DataFrame({col: result_cat}, index=cat_cols)
     result_num = pd.DataFrame({col: result_num}, index=num_cols)
     return result_cat, result_num
+
+
+def get_corr_data(df, xcol, ycol):
+    """
+    Données pour le graphe de corrélation
+    :param ycol:
+    :param xcol:
+    :param df:
+    :return:
+    """
+    return df.groupby([xcol, ycol]).size().unstack(fill_value=0)
 
 
 # Questionnement
@@ -1024,13 +1081,14 @@ def do_kmeans(data, numeric_columns, categorical_columns, k=2):
     :param k:
     :return:
     """
+    data_ = data.copy()
     preprocessor = get_processor(numeric_columns, categorical_columns)
     pipeline = Pipeline(steps=[
         ('preprocessor', preprocessor),
         ('kmeans', KMeans(n_clusters=k, random_state=42))
     ])
-    pipeline.fit(data)
-    data['cluster'] = pipeline.predict(data)
+    pipeline.fit(data_)
+    data['cluster'] = pipeline.predict(data_)
     inertia = pipeline.named_steps['kmeans'].inertia_
     return data, inertia
 
@@ -1079,3 +1137,139 @@ def run_multiple_kmeans(data, numeric_columns, categorical_columns, saveas, end,
     plt.savefig(saveas)
 
     return get_best_k(inertia_values) + start
+## Pour la table  agents
+### siret
+def clean_siret(df):
+    """
+    Remplace les valeurs manquantes dans la colonne 'siret' par le mode de cette colonne.
+    
+    :param df: DataFrame contenant une colonne 'siret'.
+    :return: DataFrame avec les valeurs manquantes dans 'siret' remplacées par le mode.
+    """
+    # Calculer le mode de la colonne 'siret'. Le mode() retourne une série, donc on prend le premier élément avec [0].
+    siret_mode = df['siret'].mode()[0]
+    
+    # Remplacer les valeurs manquantes par le mode
+    df['cleaned'] = df['siret']
+    df['cleaned'].fillna(siret_mode, inplace=True)
+    df = df[['siret','cleaned']] 
+    return df
+
+## adress
+def clean_address_based_on_city(df):
+    """
+    Version optimisée pour remplir les valeurs manquantes de 'address' basée sur le mode des adresses pour chaque ville spécifique,
+    sans éliminer les lignes ayant des valeurs NaN dans 'city'.
+    
+    :param df: DataFrame contenant les colonnes 'city' et 'address'.
+    :return: DataFrame avec les valeurs manquantes dans 'address' remplacées par le mode pour chaque ville, et un mode global comme solution de secours.
+    """
+    # Calculer le mode de 'address' pour chaque 'city' non-NaN
+    city_to_address_mode = df.dropna(subset=['city']).groupby('city')['address'].agg(lambda x: x.mode()[0] if not x.mode().empty else np.nan).to_dict()
+    
+    # Créer une nouvelle colonne 'cleaned_address' pour stocker les résultats
+    df['cleaned_address'] = df['address']
+    
+    # Identifier les lignes avec 'address' manquant
+    missing_addresses = df['cleaned_address'].isna()
+    
+    # Appliquer le dictionnaire pour remplir les valeurs manquantes, uniquement là où 'city' n'est pas NaN
+    df.loc[missing_addresses & df['city'].notna(), 'cleaned_address'] = df.loc[missing_addresses & df['city'].notna(), 'city'].map(city_to_address_mode)
+    
+    # Utiliser le mode global de 'address' comme solution de secours pour les valeurs manquantes restantes
+    global_address_mode = df['cleaned_address'].mode()[0]
+    df['cleaned_address'].fillna(global_address_mode, inplace=True)
+    
+    return df[['city', 'address', 'cleaned_address']]
+
+
+
+### departement
+def clean_departement_based_on_city(df):
+    """
+    Version optimisée pour remplir les valeurs manquantes de 'department' basée sur le mode des départements pour chaque ville spécifique,
+    sans éliminer les lignes ayant des valeurs NaN dans 'city'.
+    
+    :param df: DataFrame contenant les colonnes 'city' et 'department'.
+    :return: DataFrame avec les valeurs manquantes dans 'department' remplacées par le mode pour chaque ville, et un mode global comme solution de secours.
+    """
+    # Calculer le mode de 'department' pour chaque 'city' non-NaN
+    city_to_department_mode = df.dropna(subset=['city']).groupby('city')['department'].agg(lambda x: x.mode()[0] if not x.mode().empty else np.nan).to_dict()
+    
+    # Créer une nouvelle colonne 'cleaned_department' pour stocker les résultats
+    df['cleaned_department'] = df['department']
+    
+    # Identifier les lignes avec 'department' manquant
+    missing_departments = df['cleaned_department'].isna()
+    
+    # Appliquer le dictionnaire pour remplir les valeurs manquantes, uniquement là où 'city' n'est pas NaN
+    df.loc[missing_departments & df['city'].notna(), 'cleaned_department'] = df.loc[missing_departments & df['city'].notna(), 'city'].map(city_to_department_mode)
+    
+    # Utiliser le mode global de 'department' comme solution de secours pour les valeurs manquantes restantes
+    global_department_mode = df['cleaned_department'].mode()[0]
+    df['cleaned_department'].fillna(global_department_mode, inplace=True)
+    
+    return df[['city', 'department', 'cleaned_department']]
+
+
+
+###city 
+import numpy as np
+import pandas as pd
+import re
+
+def clean_city_based_on_country(df):
+    """
+    Ajoute ou met à jour une colonne 'cleaned_city' dans le DataFrame, contenant les noms des villes nettoyées,
+    avec les valeurs manquantes et les valeurs aberrantes détectées par regex remplacées par le mode de la ville pour chaque pays spécifique.
+    Les valeurs aberrantes sont détectées en cherchant 'AAAA' ou tout autre pattern aberrant spécifié.
+    
+    :param df: DataFrame contenant les colonnes 'city' et 'country'.
+    :return: DataFrame avec une colonne 'cleaned_city' ajoutée ou mise à jour pour les villes.
+    """
+    # Détecter et marquer les valeurs aberrantes dans 'city'
+    df['cleaned_city'] = df['city'].replace(to_replace=r'^AAAA$', value=np.nan, regex=True)
+    
+    # Calculer le mode de 'city' pour chaque 'country'
+    country_city_mode = df.dropna(subset=['cleaned_city']).groupby('country')['cleaned_city'].agg(lambda x: x.mode()[0] if not x.mode().empty else np.nan).to_dict()
+    
+    # Appliquer le mode pour remplir les valeurs aberrantes/marquées et manquantes
+    for country, mode_city in country_city_mode.items():
+        # Remplacer les valeurs aberrantes/marquées et manquantes par le mode de la ville pour le pays correspondant
+        df.loc[(df['country'] == country) & (df['cleaned_city'].isna()), 'cleaned_city'] = mode_city
+    
+    # Utiliser le mode global comme solution de secours pour les valeurs aberrantes/marquées et manquantes restantes
+    global_city_mode = df['cleaned_city'].mode()[0]
+    df['cleaned_city'].fillna(global_city_mode, inplace=True)
+    
+    return df[['country', 'city', 'cleaned_city']]
+
+
+### country
+
+def clean_country_based_on_city(df):
+    """
+    Version optimisée pour remplir les valeurs manquantes de 'country' basée sur le mode des pays pour chaque ville spécifique,
+    sans éliminer les lignes ayant des valeurs NaN dans 'city'.
+    
+    :param df: DataFrame contenant les colonnes 'city' et 'country'.
+    :return: DataFrame avec les valeurs manquantes dans 'country' remplacées par le mode pour chaque ville, et un mode global comme solution de secours.
+    """
+    # Calculer le mode de 'country' pour chaque 'city' non-NaN
+    city_to_country_mode = df.dropna(subset=['city']).groupby('city')['country'].agg(lambda x: x.mode()[0] if not x.mode().empty else np.nan).to_dict()
+    
+    # Créer une nouvelle colonne 'cleaned_country' pour stocker les résultats, sans éliminer les NaN dans 'city'
+    df['cleaned_country'] = df['country']
+    
+    # Identifier les lignes avec 'country' manquant
+    missing_countries = df['cleaned_country'].isna()
+    
+    # Appliquer le dictionnaire pour remplir les valeurs manquantes, uniquement là où 'city' n'est pas NaN
+    df.loc[missing_countries & df['city'].notna(), 'cleaned_country'] = df.loc[missing_countries & df['city'].notna(), 'city'].map(city_to_country_mode)
+    
+    # Utiliser le mode global de 'country' comme solution de secours pour les valeurs manquantes restantes
+    global_country_mode = df['cleaned_country'].mode()[0]
+    df['cleaned_country'].fillna(global_country_mode, inplace=True)
+    
+    return df[['city', 'country', 'cleaned_country']]
+
