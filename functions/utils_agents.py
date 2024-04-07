@@ -822,6 +822,10 @@ def replace_original_with_cleaned(original, column, cleaned, path):
     :return:
     """
     original[column] = cleaned
+    cleaned_column = f'cleaned_{column}'
+    if cleaned_column in original.columns:
+        original = original.drop(columns=[cleaned_column])
+
     original.to_csv(path, index=False)
     return original
 
@@ -1154,7 +1158,7 @@ def clean_siret(df):
     # Remplacer les valeurs manquantes par le mode
     df['cleaned_siret'] = df['siret']
     df['cleaned_siret'].fillna(siret_mode, inplace=True)
-    df = df[['siret', 'cleaned']]
+    df = df[['siret', 'cleaned_siret']]
     return df
 
 

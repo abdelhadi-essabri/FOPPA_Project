@@ -1257,12 +1257,10 @@ def replace_latitude(stats, value):
     :return:
     """
     mode = stats['mode']
-    if str(value).isdigit():
-        return value
-    elif isinstance(value, (float, int)) and np.isnan(value):
+    if isinstance(value, (float, int)) and np.isnan(value):
         return mode
     else:
-        return mode
+        return value
 
 
 def clean_latitude(df):
@@ -1274,7 +1272,7 @@ def clean_latitude(df):
     stats = {
         'mode': df['latitude'].mode()[0]
     }
-    df['cleaned'] = df['latitude'].apply(lambda x: replace_latitude(stats, x))
+    df['cleaned_latitude'] = df['latitude'].apply(lambda x: replace_latitude(stats, x))
     return df
 
 
@@ -1286,12 +1284,10 @@ def replace_longitude(stats, value):
     :return:
     """
     mode = stats['mode']
-    if str(value).isdigit():
-        return value
-    elif isinstance(value, (float, int)) and np.isnan(value):
+    if isinstance(value, (float, int)) and np.isnan(value):
         return mode
     else:
-        return mode
+        return value
 
 
 def clean_longitude(df):
@@ -1303,7 +1299,7 @@ def clean_longitude(df):
     stats = {
         'mode': df['longitude'].mode()[0]
     }
-    df['cleaned'] = df['longitude'].apply(lambda x: replace_longitude(stats, x))
+    df['cleaned_longitude'] = df['longitude'].apply(lambda x: replace_longitude(stats, x))
     return df
 
 
