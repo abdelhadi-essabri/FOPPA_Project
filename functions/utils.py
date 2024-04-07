@@ -949,9 +949,10 @@ def get_corr_cat_to_cat(data, cat_column_1, cat_column_2):
     contingency_table = pd.crosstab(data[cat_column_1], data[cat_column_2])
     chi2_stat, _, _, _ = chi2_contingency(contingency_table)
     n = data.shape[0]
-    print(contingency_table.shape, cat_column_1, cat_column_2)
     min_dim = min(contingency_table.shape) - 1
-    cramers_v = np.sqrt(chi2_stat / (n * min_dim))
+    cramers_v = 0
+    if min_dim != 0:
+        cramers_v = np.sqrt(chi2_stat / (n * min_dim))
     return cramers_v
 
 
@@ -969,6 +970,7 @@ def get_corr_cat_to_num(data, cat_column, num_column):
         grouped_data[r] = data[data[cat_column] == r][num_column].values
 
     _, p_value = f_oneway(*grouped_data.values())
+    p_value = 0 if np.isnan(p_value) else p_value
     return p_value
 
 
@@ -1033,7 +1035,7 @@ def get_all_corr_num(data, col, num_cols, cat_cols):
     return result_cat, result_num
 
 
-def get_corr_data(df, xcol, ycol):
+def get_corr_cat_2_cat_data(df, xcol, ycol):
     """
     Données pour le graphe de corrélation
     :param ycol:
@@ -1042,6 +1044,21 @@ def get_corr_data(df, xcol, ycol):
     :return:
     """
     return df.groupby([xcol, ycol]).size().unstack(fill_value=0)
+
+
+def get_corr_cat_2_cat_data_many_y(df, df_cat, xcol, ycol):
+    """
+    Données pour le graphe de corrélation lorsque les catégories en y sont nombreuses
+    :param df_cat:
+    :param ycol:
+    :param xcol:
+    :param df:
+    :return:
+    """
+    df_cat_ = df_cat.rename(columns={'valeur': ycol})
+    df_cat_ = df_cat_[[ycol, 'category']]
+    merged_df = pd.merge(df, df_cat_, on=ycol, how='left')
+    return get_corr_cat_2_cat_data(merged_df, xcol, 'category')
 
 
 # Questionnement
@@ -1167,14 +1184,24 @@ def detect_anomalies(data, numeric_columns, categorical_columns):
     return result
 
 
-def get_anomaly_cluster(data, cluserId):
+def get_anomaly_cluster(data, clusterId):
     """
     Trouver anomalies pour un cluster spécific
     :param data:
-    :param cluserId:
+    :param clusterId:
     :return:
     """
-    return data[(data['cluster'] == cluserId) & (data['anomaly'])]
+    return data[(data['cluster'] == clusterId) & (data['anomaly'])]
+
+
+def get_cluster_data(data, clusterId):
+    """
+    Determiner les données d'un cluster
+    :param data:
+    :param clusterId:
+    :return:
+    """
+    return data[data['cluster'] == clusterId]
 
 
 def get_anomaly_corr(data, clusterId, num_cols, cat_cols):
@@ -1194,57 +1221,3 @@ def get_anomaly_corr(data, clusterId, num_cols, cat_cols):
         cat_cols=cat_cols
     )
     return corr_cat, corr_num
-
-
-def explain_anomalies(df, numeric_columns, categorical_columns, cluster_index, instance_index):
-    """
-    Explain anomalies detected by detect_anomalies function using LIME
-    :param cluster_index:  index of the cluster
-    :param df:  DataFrame containing the data
-    :param numeric_columns: List of numeric column names
-    :param categorical_columns: List of categorical column names
-    :param instance_index: Index of the instance to explain
-    :return: Explanation for the anomaly
-    """
-    feature_names = categorical_columns + numeric_columns
-    data = df[df['cluster'] == cluster_index][feature_names]
-
-    # Define the preprocessor and isolation forest
-    preprocessor = get_processor(numeric_columns, categorical_columns)
-    isolation_forest = IsolationForest(random_state=42)
-
-    # Define the pipeline
-    pipeline = Pipeline(steps=[
-        ('preprocessor', preprocessor),
-        ('isolation_forest', isolation_forest)
-    ])
-
-    # Fit the pipeline
-    pipeline.fit(data)
-    categorical_features = [feature_names.index(fn) for fn in categorical_columns]
-    categorical_names = {}
-    for col in categorical_columns:
-        if col in data.columns:
-            categories = data[col].unique().tolist()
-            categorical_names[feature_names.index(col)] = categories
-
-    label_encoders = {}
-    for col in categorical_columns:
-        label_encoders[col] = LabelEncoder()
-        data[col] = label_encoders[col].fit_transform(data[col])
-
-    # Define the LIME explainer
-    explainer = lime.lime_tabular.LimeTabularExplainer(data.values,
-                                                       feature_names=feature_names,
-                                                       categorical_features=categorical_features,
-                                                       categorical_names=categorical_names,
-                                                       class_names=['Normal', 'Anomaly'],
-                                                       random_state=42)
-
-    # Get the instance to explain
-    instance = data.loc[[instance_index]]
-    print(instance.values[0])
-    # Explain the instance
-    explanation = explainer.explain_instance(instance.values[0], pipeline.predict_proba)
-
-    return explanation
