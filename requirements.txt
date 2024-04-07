@@ -8,4 +8,6 @@ seaborn
 tqdm
 notebook
 jupyterlab
-lime
+haversine
+networkx
+python-louvain

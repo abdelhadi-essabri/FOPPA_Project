@@ -1,22 +1,22 @@
 import os
 import re
 
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
+import community
 import matplotlib.cm as cm
 import matplotlib.colors as mcolors
+import matplotlib.pyplot as plt
+import networkx as nx
+import numpy as np
+import pandas as pd
+import seaborn as sns
+from haversine import haversine, Unit
+from scipy.stats import f_oneway, chi2_contingency
 from sklearn.cluster import KMeans
 from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import IsolationForest
-from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder, StandardScaler, LabelEncoder
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from tqdm import tqdm
-from scipy.stats import f_oneway, chi2_contingency
-import seaborn as sns
-import lime
-import lime.lime_tabular
 
 
 # EXPLORATION
@@ -75,6 +75,14 @@ def get_na(df, column):
     data_df = pd.DataFrame(data)
     data_df['proportion'] = (data_df['count'] / data_df['count'].sum()) * 100
     return data_df
+
+
+def get_na_all(data):
+    data_na = data.isna().sum()
+    data_na = data_na.reset_index()
+    data_na.columns = ['column', 'count']
+    data_na['proportion'] = (data_na['count'] / len(data)) * 100
+    return data_na
 
 
 def plot_proportion(data, xcol, ycol, title, xtitle, ytitle, saveas, logy=True, xrot=0):
@@ -918,6 +926,32 @@ def plot_categorial_numerical(
     plt.savefig(saveas)
 
 
+def plot_numerical_numerical_2(
+        data,
+        title,
+        xlabel,
+        ylabel,
+        saveas,
+        logy=True
+):
+    sns.scatterplot(data=data, x=xlabel, y=ylabel)
+
+    plt.title(title)
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+
+    if logy:
+        plt.yscale('log')
+
+    for index, row in data.iterrows():
+        plt.text(row[xlabel], row[ylabel], str(int(row['agentId'])))
+
+    folder = os.path.dirname(saveas)
+    os.makedirs(folder, exist_ok=True)
+
+    plt.savefig(saveas)
+
+
 def plot_numerical_numerical(
         data,
         title,
@@ -998,18 +1032,20 @@ def get_all_corr_cat(data, col, num_cols, cat_cols):
     """
     result_num = []
     num_cols = [c for c in num_cols if c != col]
-    for c in num_cols:
+    for c in tqdm(num_cols):
         corr = get_corr_cat_to_num(data, cat_column=col, num_column=c)
         result_num.append(corr)
 
     result_cat = []
     cat_cols = [c for c in cat_cols if c != col]
-    for c in cat_cols:
+    for c in tqdm(cat_cols):
         corr = get_corr_cat_to_cat(data, cat_column_1=col, cat_column_2=c)
         result_cat.append(corr)
 
     result_cat = pd.DataFrame({col: result_cat}, index=cat_cols)
+    result_cat = result_cat.sort_values(by=col, ascending=False)
     result_num = pd.DataFrame({col: result_num}, index=num_cols)
+    result_num = result_num.sort_values(by=col, ascending=False)
     return result_cat, result_num
 
 
@@ -1023,15 +1059,19 @@ def get_all_corr_num(data, col, num_cols, cat_cols):
     :return:
     """
     result_num = []
-    for c in num_cols:
+    num_cols = [c for c in num_cols if c != col]
+    for c in tqdm(num_cols):
         result_num.append(get_corr_num_to_mum(data, num_column_1=col, num_column_2=c))
 
     result_cat = []
-    for c in cat_cols:
+    cat_cols = [c for c in cat_cols if c != col]
+    for c in tqdm(cat_cols):
         result_cat.append(get_corr_cat_to_num(data, num_column=col, cat_column=c))
 
     result_cat = pd.DataFrame({col: result_cat}, index=cat_cols)
+    result_cat = result_cat.sort_values(by=col, ascending=False)
     result_num = pd.DataFrame({col: result_num}, index=num_cols)
+    result_num = result_num.sort_values(by=col, ascending=False)
     return result_cat, result_num
 
 
@@ -1044,6 +1084,20 @@ def get_corr_cat_2_cat_data(df, xcol, ycol):
     :return:
     """
     return df.groupby([xcol, ycol]).size().unstack(fill_value=0)
+
+
+def get_corr_cat_2_cat_data_limit(df, xcol, ycol, limit=5):
+    """
+    Données pour le graphe de corrélation
+    :param limit:
+    :param ycol:
+    :param xcol:
+    :param df:
+    :return:
+    """
+    correlation_data = df.groupby([xcol, ycol]).size().unstack(fill_value=0)
+    correlation_data = correlation_data.stack().sort_values(ascending=False).head(limit).unstack(fill_value=0)
+    return correlation_data
 
 
 def get_corr_cat_2_cat_data_many_y(df, df_cat, xcol, ycol):
@@ -1303,6 +1357,14 @@ def clean_longitude(df):
     return df
 
 
+def calculate_distance(row):
+    buyer_coords = (row['buyer_latitude'], row['buyer_longitude'])
+    supplier_coords = (row['supplier_latitude'], row['supplier_longitude'])
+
+    distance = haversine(buyer_coords, supplier_coords, unit=Unit.KILOMETERS)
+    return distance
+
+
 def extend_lots_data(lots_path, buyers_path, suppliers_path, agents_path, saveas):
     """
     Methode pour etendre les données des lots
@@ -1313,16 +1375,220 @@ def extend_lots_data(lots_path, buyers_path, suppliers_path, agents_path, saveas
     :param saveas:
     :return:
     """
-    lots = pd.read_csv(lots_path)
-    buyers = pd.read_csv(buyers_path)
-    suppliers = pd.read_csv(suppliers_path)
-    agents = pd.read_csv(agents_path)
+    lots = load_data(path=lots_path)
+    buyers = load_data(path=buyers_path)
+    suppliers = load_data(path=suppliers_path)
+    agents = load_data(path=agents_path)
 
-    merged_lots_1 = pd.merge(lots, buyers, on='lotId', how='left')
-    merged_lots_1 = pd.merge(merged_lots_1, agents, on='agentId', how='left')
+    agents = agents.drop(columns=['name', 'siret', 'address', 'zipcode'])
 
-    merged_lots_2 = pd.merge(lots, suppliers, on='lotId', how='left')
-    merged_lots_2 = pd.merge(merged_lots_2, agents, on='agentId', how='left')
+    agents_ = agents.copy()
+    agents_.columns = [f'buyer_{c}' for c in list(agents_.columns)]
 
-    result = pd.merge(merged_lots_1, merged_lots_2, on='lotId', how='inner')
-    result.to_csv(saveas)
+    merged_lots = pd.merge(lots, buyers, on='lotId', how='left')
+    merged_lots = merged_lots.rename(columns={'agentId': 'buyer_agentId'})
+    merged_lots = pd.merge(merged_lots, agents_, on='buyer_agentId', how='left')
+
+    agents_ = agents.copy()
+    agents_.columns = [f'supplier_{c}' for c in list(agents_.columns)]
+
+    merged_lots = pd.merge(merged_lots, suppliers, on='lotId', how='left')
+    merged_lots = merged_lots.rename(columns={'agentId': 'supplier_agentId'})
+    merged_lots = pd.merge(merged_lots, agents_, on='supplier_agentId', how='left')
+
+    merged_lots['distance'] = merged_lots.apply(calculate_distance, axis=1)
+
+    save_data(merged_lots, path=saveas)
+
+
+def get_data_q8(df, numeric_columns, categorical_columns, col):
+    """
+    Permet de retourner les données de la question 8
+    :param df:
+    :param numeric_columns:
+    :param categorical_columns:
+    :param col:
+    :return:
+    """
+    cols = numeric_columns + categorical_columns + [col]
+    result = df[cols]
+    result = result.dropna()
+    return result
+
+
+def get_data_q12(df, numeric_columns, categorical_columns):
+    cols = ['contractorSme'] + numeric_columns + categorical_columns
+    df_ = df[cols]
+    df_ = df_[df_['contractorSme'] == 'Y']
+    return df_
+
+
+# GRAPHE
+
+def show_graph(graph, title, reflexive=True, node_color='lightblue'):
+    fig, ax = plt.subplots(figsize=(14, 10))
+
+    # Draw nodes
+    pos = nx.circular_layout(graph, scale=20)
+    d = dict(graph.degree)
+    nx.draw_networkx_nodes(graph, pos, node_color=node_color, alpha=0.75, ax=ax, nodelist=d,
+                           node_size=[d[k] * 200 for k in d])
+
+    # Draw edges
+    nx.draw_networkx_edges(graph, pos, ax=ax)
+
+    # Draw reflexive edges if reflexive parameter is True
+    if reflexive:
+        reflexive_edges = [(u, v) for u, v in graph.edges() if u == v]
+        nx.draw_networkx_edges(graph, pos, edgelist=reflexive_edges, ax=ax, edge_color='r', width=2.0)
+
+    # Draw labels
+    labels = nx.get_edge_attributes(graph, 'weight')
+    nx.draw_networkx_labels(graph, pos, font_size=10, font_family='sans-serif', ax=ax)
+    nx.draw_networkx_edge_labels(graph, pos, edge_labels=labels, ax=ax)
+
+    plt.title(title)
+    plt.axis('off')
+
+
+def create_graph(data, reflexive=False):
+    if not reflexive:
+        data = data[data['source'] != data['target']]
+    graph = nx.from_pandas_edgelist(data, edge_attr=True)
+    return graph
+
+
+def get_graph_1(data, title, reflexive=False):
+    graph = create_graph(data, reflexive)
+    show_graph(graph, title, reflexive)
+    return graph
+
+
+def get_graph_data_init(path):
+    data = load_data(path)
+    return data.dropna()
+
+
+def get_graph_data_1(data, filter_column_source, filer_column_target, filter_value, threshold=1):
+    f = (data[filter_column_source] == filter_value) & (data[filer_column_target] == filter_value)
+    data_ = data[f]
+
+    result = data_.groupby(['buyer_agentId', 'supplier_agentId']).size().reset_index(name='weight')
+    result = result.rename(columns={'buyer_agentId': 'source', 'supplier_agentId': 'target'})
+    result = result.sort_values(by='weight', ascending=False)
+
+    dtypes = {
+        'source': ['int'],
+        'target': ['int']
+    }
+    result = change_dtypes(result, dtypes)
+
+    result = result[result['weight'] > threshold]
+    return result
+
+
+def change_dtypes(data, dtypes):
+    for column, dtype in dtypes.items():
+        for t in dtype:
+            data[column] = data[column].astype(t)
+
+    return data
+
+
+def plot_centrality(graph, xlabel, ylabel, title, logy=False, xrotation=0, type='pagerank'):
+    fig, ax = plt.subplots(figsize=(8, 6))
+    plt.xticks(fontsize=6)
+
+    if type == 'pagerank':
+        scores = nx.pagerank(graph)
+    elif type == 'betweenness':
+        scores = nx.betweenness_centrality(graph, weight='weight', seed=0)
+    elif type == 'closeness':
+        scores = nx.closeness_centrality(graph)
+    else:
+        scores = dict(nx.degree(graph, weight='weight'))
+
+    X = list(scores.keys())
+    X = [str(x) for x in X]
+    y = list(scores.values())
+    norm = mcolors.Normalize(vmin=np.min(y), vmax=np.max(y))
+    mapper = cm.ScalarMappable(norm=norm, cmap='viridis')
+    colors = mapper.to_rgba(y)
+
+    cbar = fig.colorbar(mapper, ax=ax)
+    cbar.set_label('Couleurs')
+
+    ax.bar(X, y, color=colors)
+    plt.xticks(rotation=xrotation)
+    if logy:
+        ax.set_yscale('log')
+
+    ax.set_title(title)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+
+    plt.show()
+
+
+import pandas as pd
+
+
+def get_centrality_corr_data(data, reflexive=False):
+    graph = create_graph(data, reflexive)
+    partition = community.best_partition(graph)
+    pagerank_scores = nx.pagerank(graph)
+    betweenness_scores = nx.betweenness_centrality(graph, weight='weight', seed=0)
+    closeness_scores = nx.closeness_centrality(graph)
+    degree_scores = dict(nx.degree(graph, weight='weight'))
+
+    # Create DataFrame from the centrality scores
+    df = pd.DataFrame({
+        'agentId': list(partition.keys()),
+        'partition': list(partition.values()),
+        'pagerank': list(pagerank_scores.values()),
+        'betweeness': list(betweenness_scores.values()),
+        'closeness': list(closeness_scores.values()),
+        'degree': list(degree_scores.values())
+    })
+
+    return df
+
+
+def show_community(graph, title, reflexive=True):
+    fig, ax = plt.subplots(figsize=(14, 10))
+    partition = community.best_partition(graph)
+    # Draw nodes
+    pos = nx.circular_layout(graph, scale=20)
+    d = dict(graph.degree)
+    nx.draw_networkx_nodes(graph,
+                           pos,
+                           node_color=list(partition.values()),
+                           alpha=0.75,
+                           ax=ax,
+                           nodelist=d,
+                           node_size=[d[k] * 200 for k in d]
+                           )
+
+    # Draw edges
+    nx.draw_networkx_edges(graph, pos, ax=ax)
+
+    # Draw reflexive edges if reflexive parameter is True
+    if reflexive:
+        reflexive_edges = [(u, v) for u, v in graph.edges() if u == v]
+        nx.draw_networkx_edges(graph, pos, edgelist=reflexive_edges, ax=ax, edge_color='r', width=2.0)
+
+    # Draw labels
+    labels = nx.get_edge_attributes(graph, 'weight')
+    nx.draw_networkx_labels(graph, pos, font_size=10, font_family='sans-serif', ax=ax)
+    nx.draw_networkx_edge_labels(graph, pos, edge_labels=labels, ax=ax)
+
+    plt.title(title)
+    plt.axis('off')
+    plt.show()
+
+
+def get_graph_2(data, title, reflexive=False):
+    graph = create_graph(data, reflexive)
+    partition = community.best_partition(graph)
+    show_graph(graph, title, reflexive, node_color=list(partition.values()))
+    return graph
