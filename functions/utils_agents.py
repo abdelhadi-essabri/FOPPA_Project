@@ -1441,3 +1441,58 @@ def get_anomaly_cluster(data, clusterId):
     :return:
     """
     return data[(data['cluster'] == clusterId) & (data['anomaly'])]
+
+### La base sirene
+def clean_tranchEffectif_based_on_categorieEntreprise(df):
+    """
+    Version optimisée pour remplir les valeurs manquantes de 'cleaned_trancheEffectifsEtablissement' basée sur le mode
+    des cleaned_trancheEffectifsEtablissement pour chaque entreprise spécifique, sans éliminer les lignes ayant des valeurs NaN dans 'categorieEntreprise'.
+    
+    :param df: DataFrame contenant les colonnes 'cleaned_trancheEffectifsEtablissement' et 'categorieEntreprise'.
+    :return: DataFrame avec les valeurs manquantes remplacées par le mode pour chaque categorieEntreprise , et un mode global comme solution de secours.
+    """
+    # Calculer le mode de 'department' pour chaque 'city' non-NaN
+    city_to_department_mode = df.dropna(subset=['categorieEntreprise']).groupby('categorieEntreprise')['trancheEffectifsEtablissement'].agg(
+        lambda x: x.mode()[0] if not x.mode().empty else np.nan).to_dict()
+
+    # Créer une nouvelle colonne 'cleaned_department' pour stocker les résultats
+    df['cleaned_trancheEffectifsEtablissement'] = df['trancheEffectifsEtablissement']
+
+    # Identifier les lignes avec 'department' manquant
+    missing_departments = df['cleaned_trancheEffectifsEtablissement'].isna()
+
+    # Appliquer le dictionnaire pour remplir les valeurs manquantes, uniquement là où 'city' n'est pas NaN
+    df.loc[missing_departments & df['categorieEntreprise'].notna(), 'cleaned_trancheEffectifsEtablissement'] = df.loc[
+        missing_departments & df['categorieEntreprise'].notna(), 'categorieEntreprise'].map(city_to_department_mode)
+
+    # Utiliser le mode global de 'department' comme solution de secours pour les valeurs manquantes restantes
+    global_department_mode = df['cleaned_trancheEffectifsEtablissement'].mode()[0]
+    df['cleaned_trancheEffectifsEtablissement'].fillna(global_department_mode, inplace=True)
+
+    return df[['categorieEntreprise', 'trancheEffectifsEtablissement', 'cleaned_trancheEffectifsEtablissement']]
+
+
+### categorie d'etablissement
+def clean_categorieEntreprise_based_on_tranchEffectif(df):
+    """
+    Permet de traiter les NAN dans categorieEntreprisede la meme façon avec clean_tranchEffectif_based_on_categorieEntreprise
+    """
+    # Calculer le mode de 'department' pour chaque 'city' non-NaN
+    city_to_department_mode = df.dropna(subset=['trancheEffectifsEtablissement']).groupby('trancheEffectifsEtablissement')['categorieEntreprise'].agg(
+        lambda x: x.mode()[0] if not x.mode().empty else np.nan).to_dict()
+
+    # Créer une nouvelle colonne 'cleaned_department' pour stocker les résultats
+    df['cleaned_categorieEntreprise'] = df['categorieEntreprise']
+
+    # Identifier les lignes avec 'department' manquant
+    missing_categoriess = df['cleaned_categorieEntreprise'].isna()
+
+    # Appliquer le dictionnaire pour remplir les valeurs manquantes, uniquement là où 'city' n'est pas NaN
+    df.loc[missing_categoriess & df['trancheEffectifsEtablissement'].notna(), 'cleaned_categorieEntreprise'] = df.loc[
+        missing_categoriess & df['trancheEffectifsEtablissement'].notna(), 'trancheEffectifsEtablissement'].map(city_to_department_mode)
+
+    # Utiliser le mode global de 'department' comme solution de secours pour les valeurs manquantes restantes
+    global_categories_mode = df['cleaned_categorieEntreprise'].mode()[0]
+    df['cleaned_categorieEntreprise'].fillna(global_categories_mode, inplace=True)
+
+    return df[['trancheEffectifsEtablissement', 'categorieEntreprise', 'cleaned_categorieEntreprise']]
