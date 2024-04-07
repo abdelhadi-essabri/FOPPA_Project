@@ -949,9 +949,10 @@ def get_corr_cat_to_cat(data, cat_column_1, cat_column_2):
     contingency_table = pd.crosstab(data[cat_column_1], data[cat_column_2])
     chi2_stat, _, _, _ = chi2_contingency(contingency_table)
     n = data.shape[0]
-    print(contingency_table.shape, cat_column_1, cat_column_2)
     min_dim = min(contingency_table.shape) - 1
-    cramers_v = np.sqrt(chi2_stat / (n * min_dim))
+    cramers_v = 0
+    if min_dim != 0:
+        cramers_v = np.sqrt(chi2_stat / (n * min_dim))
     return cramers_v
 
 
@@ -969,6 +970,7 @@ def get_corr_cat_to_num(data, cat_column, num_column):
         grouped_data[r] = data[data[cat_column] == r][num_column].values
 
     _, p_value = f_oneway(*grouped_data.values())
+    p_value = 0 if np.isnan(p_value) else p_value
     return p_value
 
 
@@ -1033,7 +1035,7 @@ def get_all_corr_num(data, col, num_cols, cat_cols):
     return result_cat, result_num
 
 
-def get_corr_data(df, xcol, ycol):
+def get_corr_cat_2_cat_data(df, xcol, ycol):
     """
     Données pour le graphe de corrélation
     :param ycol:
@@ -1042,6 +1044,21 @@ def get_corr_data(df, xcol, ycol):
     :return:
     """
     return df.groupby([xcol, ycol]).size().unstack(fill_value=0)
+
+
+def get_corr_cat_2_cat_data_many_y(df, df_cat, xcol, ycol):
+    """
+    Données pour le graphe de corrélation lorsque les catégories en y sont nombreuses
+    :param df_cat:
+    :param ycol:
+    :param xcol:
+    :param df:
+    :return:
+    """
+    df_cat_ = df_cat.rename(columns={'valeur': ycol})
+    df_cat_ = df_cat_[[ycol, 'category']]
+    merged_df = pd.merge(df, df_cat_, on=ycol, how='inner')
+    return get_corr_cat_2_cat_data(merged_df, xcol, 'category')
 
 
 # Questionnement
@@ -1137,139 +1154,96 @@ def run_multiple_kmeans(data, numeric_columns, categorical_columns, saveas, end,
     plt.savefig(saveas)
 
     return get_best_k(inertia_values) + start
-## Pour la table  agents
-### siret
-def clean_siret(df):
+
+
+def detect_anomalies(data, numeric_columns, categorical_columns):
     """
-    Remplace les valeurs manquantes dans la colonne 'siret' par le mode de cette colonne.
-    
-    :param df: DataFrame contenant une colonne 'siret'.
-    :return: DataFrame avec les valeurs manquantes dans 'siret' remplacées par le mode.
+    Permet de détecter dans des anomalies dans les clusters
+    :param data:
+    :param numeric_columns:
+    :param categorical_columns:
+    :return:
     """
-    # Calculer le mode de la colonne 'siret'. Le mode() retourne une série, donc on prend le premier élément avec [0].
-    siret_mode = df['siret'].mode()[0]
-    
-    # Remplacer les valeurs manquantes par le mode
-    df['cleaned'] = df['siret']
-    df['cleaned'].fillna(siret_mode, inplace=True)
-    df = df[['siret','cleaned']] 
-    return df
+    preprocessor = get_processor(numeric_columns, categorical_columns)
+    pipeline = Pipeline(steps=[
+        ('preprocessor', preprocessor),
+        ('isolation_forest', IsolationForest(random_state=42))
+    ])
+    result = data.copy()
+    clusters = result['cluster'].unique()
+    for cluster_id in clusters:
+        cluster_data = result[result['cluster'] == cluster_id]
 
-## adress
-def clean_address_based_on_city(df):
+        pipeline.fit(cluster_data)
+
+        anomalies = pipeline.predict(cluster_data)
+
+        result.loc[result['cluster'] == cluster_id, 'anomaly'] = anomalies
+
+    result['anomaly'] = result['anomaly'].apply(lambda x: True if x == -1 else False)
+    return result
+
+
+def get_anomaly_cluster(data, clusterId):
     """
-    Version optimisée pour remplir les valeurs manquantes de 'address' basée sur le mode des adresses pour chaque ville spécifique,
-    sans éliminer les lignes ayant des valeurs NaN dans 'city'.
-    
-    :param df: DataFrame contenant les colonnes 'city' et 'address'.
-    :return: DataFrame avec les valeurs manquantes dans 'address' remplacées par le mode pour chaque ville, et un mode global comme solution de secours.
+    Trouver anomalies pour un cluster spécific
+    :param data:
+    :param clusterId:
+    :return:
     """
-    # Calculer le mode de 'address' pour chaque 'city' non-NaN
-    city_to_address_mode = df.dropna(subset=['city']).groupby('city')['address'].agg(lambda x: x.mode()[0] if not x.mode().empty else np.nan).to_dict()
-    
-    # Créer une nouvelle colonne 'cleaned_address' pour stocker les résultats
-    df['cleaned_address'] = df['address']
-    
-    # Identifier les lignes avec 'address' manquant
-    missing_addresses = df['cleaned_address'].isna()
-    
-    # Appliquer le dictionnaire pour remplir les valeurs manquantes, uniquement là où 'city' n'est pas NaN
-    df.loc[missing_addresses & df['city'].notna(), 'cleaned_address'] = df.loc[missing_addresses & df['city'].notna(), 'city'].map(city_to_address_mode)
-    
-    # Utiliser le mode global de 'address' comme solution de secours pour les valeurs manquantes restantes
-    global_address_mode = df['cleaned_address'].mode()[0]
-    df['cleaned_address'].fillna(global_address_mode, inplace=True)
-    
-    return df[['city', 'address', 'cleaned_address']]
+    return data[(data['cluster'] == clusterId) & (data['anomaly'])]
 
 
-
-### departement
-def clean_departement_based_on_city(df):
+def get_cluster_data(data, clusterId):
     """
-    Version optimisée pour remplir les valeurs manquantes de 'department' basée sur le mode des départements pour chaque ville spécifique,
-    sans éliminer les lignes ayant des valeurs NaN dans 'city'.
-    
-    :param df: DataFrame contenant les colonnes 'city' et 'department'.
-    :return: DataFrame avec les valeurs manquantes dans 'department' remplacées par le mode pour chaque ville, et un mode global comme solution de secours.
+    Determiner les données d'un cluster
+    :param data:
+    :param clusterId:
+    :return:
     """
-    # Calculer le mode de 'department' pour chaque 'city' non-NaN
-    city_to_department_mode = df.dropna(subset=['city']).groupby('city')['department'].agg(lambda x: x.mode()[0] if not x.mode().empty else np.nan).to_dict()
-    
-    # Créer une nouvelle colonne 'cleaned_department' pour stocker les résultats
-    df['cleaned_department'] = df['department']
-    
-    # Identifier les lignes avec 'department' manquant
-    missing_departments = df['cleaned_department'].isna()
-    
-    # Appliquer le dictionnaire pour remplir les valeurs manquantes, uniquement là où 'city' n'est pas NaN
-    df.loc[missing_departments & df['city'].notna(), 'cleaned_department'] = df.loc[missing_departments & df['city'].notna(), 'city'].map(city_to_department_mode)
-    
-    # Utiliser le mode global de 'department' comme solution de secours pour les valeurs manquantes restantes
-    global_department_mode = df['cleaned_department'].mode()[0]
-    df['cleaned_department'].fillna(global_department_mode, inplace=True)
-    
-    return df[['city', 'department', 'cleaned_department']]
+    return data[data['cluster'] == clusterId]
 
 
-
-###city 
-import numpy as np
-import pandas as pd
-import re
-
-def clean_city_based_on_country(df):
+def get_anomaly_corr(data, clusterId, num_cols, cat_cols):
     """
-    Ajoute ou met à jour une colonne 'cleaned_city' dans le DataFrame, contenant les noms des villes nettoyées,
-    avec les valeurs manquantes et les valeurs aberrantes détectées par regex remplacées par le mode de la ville pour chaque pays spécifique.
-    Les valeurs aberrantes sont détectées en cherchant 'AAAA' ou tout autre pattern aberrant spécifié.
-    
-    :param df: DataFrame contenant les colonnes 'city' et 'country'.
-    :return: DataFrame avec une colonne 'cleaned_city' ajoutée ou mise à jour pour les villes.
+    Trouver anomalies pour un cluster spécific
+    :param cat_cols:
+    :param num_cols:
+    :param data:
+    :param clusterId:
+    :return:
     """
-    # Détecter et marquer les valeurs aberrantes dans 'city'
-    df['cleaned_city'] = df['city'].replace(to_replace=r'^AAAA$', value=np.nan, regex=True)
-    
-    # Calculer le mode de 'city' pour chaque 'country'
-    country_city_mode = df.dropna(subset=['cleaned_city']).groupby('country')['cleaned_city'].agg(lambda x: x.mode()[0] if not x.mode().empty else np.nan).to_dict()
-    
-    # Appliquer le mode pour remplir les valeurs aberrantes/marquées et manquantes
-    for country, mode_city in country_city_mode.items():
-        # Remplacer les valeurs aberrantes/marquées et manquantes par le mode de la ville pour le pays correspondant
-        df.loc[(df['country'] == country) & (df['cleaned_city'].isna()), 'cleaned_city'] = mode_city
-    
-    # Utiliser le mode global comme solution de secours pour les valeurs aberrantes/marquées et manquantes restantes
-    global_city_mode = df['cleaned_city'].mode()[0]
-    df['cleaned_city'].fillna(global_city_mode, inplace=True)
-    
-    return df[['country', 'city', 'cleaned_city']]
+    cluster_data = data[data['cluster'] == clusterId]
+    corr_cat, corr_num = get_all_corr_cat(
+        data=cluster_data,
+        col='anomaly',
+        num_cols=num_cols,
+        cat_cols=cat_cols
+    )
+    return corr_cat, corr_num
 
 
-### country
-
-def clean_country_based_on_city(df):
+def get_vc_limit(df, column, limit=5):
     """
-    Version optimisée pour remplir les valeurs manquantes de 'country' basée sur le mode des pays pour chaque ville spécifique,
-    sans éliminer les lignes ayant des valeurs NaN dans 'city'.
-    
-    :param df: DataFrame contenant les colonnes 'city' et 'country'.
-    :return: DataFrame avec les valeurs manquantes dans 'country' remplacées par le mode pour chaque ville, et un mode global comme solution de secours.
+    Fonction pour retourner la nombre d'élément par valeur sous forme de dataframe
+    :param limit:
+    :param column:
+    :param df:
+    :return:
     """
-    # Calculer le mode de 'country' pour chaque 'city' non-NaN
-    city_to_country_mode = df.dropna(subset=['city']).groupby('city')['country'].agg(lambda x: x.mode()[0] if not x.mode().empty else np.nan).to_dict()
-    
-    # Créer une nouvelle colonne 'cleaned_country' pour stocker les résultats, sans éliminer les NaN dans 'city'
-    df['cleaned_country'] = df['country']
-    
-    # Identifier les lignes avec 'country' manquant
-    missing_countries = df['cleaned_country'].isna()
-    
-    # Appliquer le dictionnaire pour remplir les valeurs manquantes, uniquement là où 'city' n'est pas NaN
-    df.loc[missing_countries & df['city'].notna(), 'cleaned_country'] = df.loc[missing_countries & df['city'].notna(), 'city'].map(city_to_country_mode)
-    
-    # Utiliser le mode global de 'country' comme solution de secours pour les valeurs manquantes restantes
-    global_country_mode = df['cleaned_country'].mode()[0]
-    df['cleaned_country'].fillna(global_country_mode, inplace=True)
-    
-    return df[['city', 'country', 'cleaned_country']]
+    vc = df[column].value_counts()
+    vc_df = pd.DataFrame({'valeur': vc.index, 'count': vc.values})
+    vc_df['proportion'] = (vc_df['count'] / vc_df['count'].sum()) * 100
+    vc_df = vc_df.sort_values(by='count', ascending=False)
+    return vc_df.head(limit)
 
+
+def filter_data(df, col, values):
+    """
+    Pour filtrer les valeurs
+    :param df:
+    :param col:
+    :param values:
+    :return:
+    """
+    return df[df[col].isin(values)]
