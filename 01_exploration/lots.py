@@ -4,7 +4,7 @@
 # In[1]:
 
 
-from functions.utils_lots import *
+from functions.utils import *
 import warnings
 
 warnings.filterwarnings('ignore')
