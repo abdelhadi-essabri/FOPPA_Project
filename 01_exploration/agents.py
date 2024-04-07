@@ -1,5 +1,5 @@
 # %%
-from functions.utils import *
+from functions.utils_lots import *
 import warnings
 
 warnings.filterwarnings('ignore')
