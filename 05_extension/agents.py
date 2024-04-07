@@ -88,6 +88,7 @@ print(clusterSirene.head())
 # Identification et préparation des colonnes numériques et catégorielles à utiliser pour le clustering. Cela inclut l'exclusion de certaines colonnes spécifiques pour affiner notre analyse.
 
 # %%
+clusters_sirene = load_data('../donnees/agents_sirene_cleaned.csv')
 numeric_columns = get_dtypes_columns(clusters_sirene, dtypes=['number'], to_remove=['agentId'])
 print("\n# Colonnes numériques sélectionnées initialement")
 print(numeric_columns)
