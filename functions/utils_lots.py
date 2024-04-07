@@ -1249,6 +1249,64 @@ def filter_data(df, col, values):
     return df[df[col].isin(values)]
 
 
+def replace_latitude(stats, value):
+    """
+    Methode pour les valeurs de latitude de l'agent
+    :param stats:
+    :param value:
+    :return:
+    """
+    mode = stats['mode']
+    if str(value).isdigit():
+        return value
+    elif isinstance(value, (float, int)) and np.isnan(value):
+        return mode
+    else:
+        return mode
+
+
+def clean_latitude(df):
+    """
+    Permet de nettoyer latitude de l'agent
+    :param df:
+    :return:
+    """
+    stats = {
+        'mode': df['latitude'].mode()[0]
+    }
+    df['cleaned'] = df['latitude'].apply(lambda x: replace_latitude(stats, x))
+    return df
+
+
+def replace_longitude(stats, value):
+    """
+    Methode pour les valeurs de longitude de l'agent
+    :param stats:
+    :param value:
+    :return:
+    """
+    mode = stats['mode']
+    if str(value).isdigit():
+        return value
+    elif isinstance(value, (float, int)) and np.isnan(value):
+        return mode
+    else:
+        return mode
+
+
+def clean_longitude(df):
+    """
+    Permet de nettoyer longitude de l'agent
+    :param df:
+    :return:
+    """
+    stats = {
+        'mode': df['longitude'].mode()[0]
+    }
+    df['cleaned'] = df['longitude'].apply(lambda x: replace_longitude(stats, x))
+    return df
+
+
 def extend_lots_data(lots_path, buyers_path, suppliers_path, agents_path, saveas):
     """
     Methode pour etendre les données des lots
@@ -1272,5 +1330,3 @@ def extend_lots_data(lots_path, buyers_path, suppliers_path, agents_path, saveas
 
     result = pd.merge(merged_lots_1, merged_lots_2, on='lotId', how='inner')
     result.to_csv(saveas)
-
-

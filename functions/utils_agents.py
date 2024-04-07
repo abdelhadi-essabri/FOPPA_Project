@@ -1152,8 +1152,8 @@ def clean_siret(df):
     siret_mode = df['siret'].mode()[0]
 
     # Remplacer les valeurs manquantes par le mode
-    df['cleaned'] = df['siret']
-    df['cleaned'].fillna(siret_mode, inplace=True)
+    df['cleaned_siret'] = df['siret']
+    df['cleaned_siret'].fillna(siret_mode, inplace=True)
     df = df[['siret', 'cleaned']]
     return df
 
@@ -1281,3 +1281,78 @@ def clean_country_based_on_city(df):
     df['cleaned_country'].fillna(global_country_mode, inplace=True)
 
     return df[['city', 'country', 'cleaned_country']]
+
+
+###zipcode
+
+def clean_zipcode_based_on_city(df):
+    """
+    Version optimisée pour remplir les valeurs manquantes ou aberrantes dans la colonne 'zipcode'
+    en utilisant le mode des zipcodes pour chaque ville spécifique, avec un mode global comme solution de secours.
+    """
+    # Assurez-vous que 'zipcode' est traité comme une chaîne sans décimales inutiles.
+    df['zipcode_str'] = df['zipcode'].astype(str).str.extract(r'(\d{5})')[0]
+
+    # Identifiez les entrées valides et remplacez les non valides ou manquantes par NaN directement.
+    df['cleaned_zipcode'] = pd.to_numeric(df['zipcode_str'], errors='coerce')
+    df.loc[~df['zipcode_str'].str.match(r'^\d{5}$', na=False), 'cleaned_zipcode'] = np.nan
+
+    # Précalculer le mode des zipcodes par ville et le mode global pour utilisation ultérieure.
+    mode_zipcode_by_city = df.dropna().groupby('city')['cleaned_zipcode'].agg(
+        lambda x: x.mode()[0] if not x.mode().empty else np.nan)
+    global_mode_zipcode = df['cleaned_zipcode'].mode()[0] if not df['cleaned_zipcode'].mode().empty else 'Unknown'
+
+    # Appliquez le mode par ville là où les zipcodes sont NaN ou non valides; fallback au mode global si nécessaire.
+    df['cleaned_zipcode'] = df.apply(
+        lambda row: mode_zipcode_by_city.get(row['city'], global_mode_zipcode) if pd.isna(row['cleaned_zipcode']) else
+        row['cleaned_zipcode'],
+        axis=1
+    )
+
+    # Supprimez la colonne temporaire 'zipcode_str'.
+    return df.drop(columns=['zipcode_str'])[['city', 'zipcode', 'cleaned_zipcode']]
+
+
+def deleteColumns(df, cols):
+    # Supprimer les colonnes spécifiées dans la liste 'cols' du DataFrame 'df'
+    # axis=1 spécifie que nous voulons supprimer des colonnes
+    # inplace=False signifie que cette opération renvoie un nouveau DataFrame sans modifier l'original
+    # errors='ignore' permet d'éviter des erreurs si certaines colonnes spécifiées dans 'cols' n'existent pas dans 'df'
+    return df.drop(cols, axis=1, inplace=False, errors='ignore')
+
+
+def saveData(df, path):
+    df.to_csv(path, index=False)
+
+
+def merge_data(data, others):
+    merge_data = data
+    for on, how, other in others:
+        merge_data = pd.merge(merge_data, other, on=on, how=how)
+        c = other.columns[-1]
+        merge_data[c] = merge_data[c].fillna(0)
+
+    return merge_data
+
+
+def get_gb_count(data, by_col, count_col='count'):
+    data_gb = data.groupby(by_col).size()
+    data_gb = data_gb.reset_index()
+    data_gb.columns = [by_col, count_col]
+    data_gb['proportion'] = (data_gb[count_col] / data_gb[count_col].sum()) * 100
+    data_gb = data_gb.sort_values(by=count_col, ascending=False).reset_index(drop=True)
+    return data_gb
+
+
+def get_dtypes_columns(data, dtypes, to_remove=None):
+    dtypes_columns = list(data.select_dtypes(include=dtypes).columns)
+    if to_remove:
+        dtypes_columns = [c for c in dtypes_columns if c not in to_remove]
+    return dtypes_columns
+
+
+def change_dtypes(data, dtypes):
+    for column, dtype in dtypes.items():
+        data[column] = data[column].astype(dtype)
+
+    return data
