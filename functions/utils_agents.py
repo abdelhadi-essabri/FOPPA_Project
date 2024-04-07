@@ -1223,11 +1223,6 @@ def clean_departement_based_on_city(df):
 
 
 ###city
-import numpy as np
-import pandas as pd
-import re
-
-
 def clean_city_based_on_country(df):
     """
     Ajoute ou met à jour une colonne 'cleaned_city' dans le DataFrame, contenant les noms des villes nettoyées,
@@ -1312,9 +1307,9 @@ def clean_zipcode_based_on_city(df):
         row['cleaned_zipcode'],
         axis=1
     )
-
+    df = df.drop('zipcode_str', axis=1, inplace=False, errors='ignore')
     # Supprimez la colonne temporaire 'zipcode_str'.
-    return df.drop(columns=['zipcode_str'])[['city', 'zipcode', 'cleaned_zipcode']]
+    return df[['city', 'zipcode', 'cleaned_zipcode']]
 
 
 def deleteColumns(df, cols):
@@ -1323,11 +1318,6 @@ def deleteColumns(df, cols):
     # inplace=False signifie que cette opération renvoie un nouveau DataFrame sans modifier l'original
     # errors='ignore' permet d'éviter des erreurs si certaines colonnes spécifiées dans 'cols' n'existent pas dans 'df'
     return df.drop(cols, axis=1, inplace=False, errors='ignore')
-
-
-def saveData(df, path):
-    df.to_csv(path, index=False)
-
 
 def merge_data(data, others):
     merge_data = data
@@ -1360,3 +1350,94 @@ def change_dtypes(data, dtypes):
         data[column] = data[column].astype(dtype)
 
     return data
+def plot_proportion(data, xcol, ycol, title, xtitle, ytitle, logy=True):
+    fig, ax = plt.subplots(figsize=(8, 6))
+    plt.xticks(fontsize=6)
+    
+    X = data[xcol].values.astype(str)
+    y = data[ycol].values
+    
+    # Utiliser une colormap pour les couleurs des barres
+    # Assurez-vous que les valeurs y sont normalisées pour la colormap
+    norm = mcolors.Normalize(vmin=y.min(), vmax=y.max())
+    mapper = cm.ScalarMappable(norm=norm, cmap='viridis')
+    colors = mapper.to_rgba(y)
+
+    # Ajouter une barre de couleur (légende) pour indiquer les valeurs
+    cbar = fig.colorbar(mapper, ax=ax)
+    cbar.set_label('Couleurs')
+    
+    ax.bar(X, y, color=colors)
+    plt.xticks(rotation=0)
+    if logy:
+        ax.set_yscale('log')
+    ax.set_title(title)
+    ax.set_xlabel(xtitle)
+    ax.set_ylabel(ytitle)
+
+def get_moyenne_mode(data, numeric_features, categorical_features, k_best):
+    result = data.groupby('cluster')[categorical_features[0]].agg(lambda x: x.mode()[0]).reset_index()
+    for col in categorical_features[1:]:
+        df2 = data.groupby('cluster')[col].agg(lambda x: x.mode()[0]).reset_index()
+        result = pd.merge(result, df2, on='cluster', how='inner')
+        
+    for col in numeric_features:
+        df2 = data.groupby('cluster')[col].mean().reset_index()
+        result = pd.merge(result, df2, on='cluster', how='inner')
+        
+    return result
+
+def grouby_by_values(data, column, by, threshold):
+    data_gb = data[column].value_counts()
+    values = data_gb[data_gb > threshold].index
+    data[by[-1]] = data[column].apply(lambda x: x if x in values else 'Others')
+    data_gb = data.groupby(by).size().unstack(fill_value=0)
+    data_gb.columns.name = column
+    return data_gb
+def detect_anomalies(data, numeric_columns, categorical_columns):
+    """
+    Permet de détecter dans des anomalies dans les clusters
+    :param data:
+    :param numeric_columns:
+    :param categorical_columns:
+    :return:
+    """
+    preprocessor = get_processor(numeric_columns, categorical_columns)
+    pipeline = Pipeline(steps=[
+        ('preprocessor', preprocessor),
+        ('isolation_forest', IsolationForest(random_state=42))
+    ])
+    result = data.copy()
+    clusters = result['cluster'].unique()
+    for cluster_id in clusters:
+        cluster_data = result[result['cluster'] == cluster_id]
+
+        pipeline.fit(cluster_data)
+
+        anomalies = pipeline.predict(cluster_data)
+
+        result.loc[result['cluster'] == cluster_id, 'anomaly'] = anomalies
+
+    result['anomaly'] = result['anomaly'].apply(lambda x: True if x == -1 else False)
+    return result
+
+
+def get_corr_cat_2_cat_data(df, xcol, ycol):
+    """
+    Données pour le graphe de corrélation
+    :param ycol:
+    :param xcol:
+    :param df:
+    :return:
+    """
+    return df.groupby([xcol, ycol]).size().unstack(fill_value=0)
+
+
+def get_anomaly_cluster(data, clusterId):
+    """
+    Trouver anomalies pour un cluster spécific
+    :param data:
+    :param clusterId:
+    :return:
+    """
+    return data[(data['cluster'] == clusterId) & (data['anomaly'])]
