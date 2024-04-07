@@ -1057,7 +1057,7 @@ def get_corr_cat_2_cat_data_many_y(df, df_cat, xcol, ycol):
     """
     df_cat_ = df_cat.rename(columns={'valeur': ycol})
     df_cat_ = df_cat_[[ycol, 'category']]
-    merged_df = pd.merge(df, df_cat_, on=ycol, how='left')
+    merged_df = pd.merge(df, df_cat_, on=ycol, how='inner')
     return get_corr_cat_2_cat_data(merged_df, xcol, 'category')
 
 
@@ -1221,3 +1221,29 @@ def get_anomaly_corr(data, clusterId, num_cols, cat_cols):
         cat_cols=cat_cols
     )
     return corr_cat, corr_num
+
+
+def get_vc_limit(df, column, limit=5):
+    """
+    Fonction pour retourner la nombre d'élément par valeur sous forme de dataframe
+    :param limit:
+    :param column:
+    :param df:
+    :return:
+    """
+    vc = df[column].value_counts()
+    vc_df = pd.DataFrame({'valeur': vc.index, 'count': vc.values})
+    vc_df['proportion'] = (vc_df['count'] / vc_df['count'].sum()) * 100
+    vc_df = vc_df.sort_values(by='count', ascending=False)
+    return vc_df.head(limit)
+
+
+def filter_data(df, col, values):
+    """
+    Pour filtrer les valeurs
+    :param df:
+    :param col:
+    :param values:
+    :return:
+    """
+    return df[df[col].isin(values)]
