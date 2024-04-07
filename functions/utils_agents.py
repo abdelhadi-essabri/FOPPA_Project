@@ -1272,4 +1272,3 @@ def clean_country_based_on_city(df):
     df['cleaned_country'].fillna(global_country_mode, inplace=True)
     
     return df[['city', 'country', 'cleaned_country']]
-
