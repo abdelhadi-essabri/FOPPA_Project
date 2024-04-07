@@ -1247,3 +1247,30 @@ def filter_data(df, col, values):
     :return:
     """
     return df[df[col].isin(values)]
+
+
+def extend_lots_data(lots_path, buyers_path, suppliers_path, agents_path, saveas):
+    """
+    Methode pour etendre les données des lots
+    :param lots_path:
+    :param buyers_path:
+    :param suppliers_path:
+    :param agents_path:
+    :param saveas:
+    :return:
+    """
+    lots = pd.read_csv(lots_path)
+    buyers = pd.read_csv(buyers_path)
+    suppliers = pd.read_csv(suppliers_path)
+    agents = pd.read_csv(agents_path)
+
+    merged_lots_1 = pd.merge(lots, buyers, on='lotId', how='left')
+    merged_lots_1 = pd.merge(merged_lots_1, agents, on='agentId', how='left')
+
+    merged_lots_2 = pd.merge(lots, suppliers, on='lotId', how='left')
+    merged_lots_2 = pd.merge(merged_lots_2, agents, on='agentId', how='left')
+
+    result = pd.merge(merged_lots_1, merged_lots_2, on='lotId', how='inner')
+    result.to_csv(saveas)
+
+
