@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Guide d'installation
 
 Ce guide vous aidera à mettre en place l'environnement nécessaire et à installer les dépendances pour faire fonctionner le code.
@@ -80,3 +81,6 @@ Les images de chaque parties sont précédées par le numéro de cette partie.
 
 
 
+=======
+# FOPPA_Project
+>>>>>>> 5bbba429fd3e17d487c254fc9c8cc59c707a0942
