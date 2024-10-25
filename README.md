@@ -87,7 +87,7 @@ Les deux méthodes génèrent des images qui seront visibles directement dans le
 
 ## Contributions de l'équipe
 - **Abdelhadi Essabri** : Analyse des tables Agents, Names, LotBuyers, LotSuppliers.
-- **Bouchra El Houari** : Analyse de la table Criteria et restructuration des codes.
+- **Bouchra El Houari** : Analyse de la table Criteria.
 - **Michel Marie Lamah** : Analyse des Lots et génération des graphiques.
 
 ## Résultats
