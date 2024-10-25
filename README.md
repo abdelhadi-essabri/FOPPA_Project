@@ -1,86 +1,95 @@
-<<<<<<< HEAD
-# Guide d'installation
 
-Ce guide vous aidera à mettre en place l'environnement nécessaire et à installer les dépendances pour faire fonctionner le code.
+# Marchés Publics et Base FOPPA
 
-## Étape 1: Création d'un environnement
+## Description
+Ce projet vise à explorer, nettoyer et analyser des données issues de marchés publics en France dans le cadre du projet DeCoMaP (Détection de la Corruption dans les Marchés Publics), financé par l'Agence Nationale de la Recherche (ANR) et réalisé avec l'Université d'Avignon. L'objectif est de développer des méthodes pour détecter des schémas de fraude et fournir une analyse descriptive complète des données disponibles.  
+Les données utilisées proviennent de la base FOPPA (French Open Public Procurement Award notices), contenant des informations sur les appels d'offres et les attributions de marchés pour la période 2010-2020.
 
-Pour créer un environnement virtuel nommé "foppa" en utilisant conda, exécutez la commande suivante dans votre terminal :
+## Membres de l'équipe
+Le projet a été mené par l'équipe "FraudeScan" (Groupe 07) :
+- **Abdelhadi Essabri** (M2 IA)
+- **Bouchra El Houari** (M2 ILSEN)
+- **Michel Marie Lamah** (M2 IA)
 
-```
+**Responsable** : Vincent Labatut, Responsable académique, Université d'Avignon
+
+---
+
+# Guide d'installation et configuration
+
+Ce guide vous aide à installer l'environnement nécessaire et les dépendances pour exécuter le code.
+
+### Étape 1: Créer un environnement
+Pour créer un environnement virtuel nommé "foppa" en utilisant conda :
+```bash
 conda create --name foppa python=3.9
 ```
 
-
-## Étape 2: Installation des packages
-
-Une fois que l'environnement est créé, activez-le en utilisant la commande suivante :
-
-```
+### Étape 2: Installer les packages
+Activez l'environnement et installez les packages requis depuis `requirements.txt` :
+```bash
 conda activate foppa
-```
-
-Ensuite, installez les packages requis à partir du fichier requirements.txt en utilisant la commande suivante :
-
-```
 pip install -r requirements.txt
 ```
 
-
-Assurez-vous que vous êtes dans le répertoire contenant le fichier requirements.txt avant d'exécuter cette commande.
-
-## Étape 3: Rendre les modules disponibles partout
-
-Pour rendre les modules disponibles partout, vous pouvez installer le package localement en mode éditable en utilisant la commande suivante :
-
-```
+### Étape 3: Installer les modules localement
+Pour rendre les modules disponibles partout :
+```bash
 pip install -e .
 ```
 
+Assurez-vous d'exécuter cette commande dans le répertoire racine du projet contenant le fichier `setup.py`.
 
-Assurez-vous d'exécuter cette commande dans le répertoire racine du projet où se trouve le fichier setup.py.
+---
 
-C'est tout ! Vous avez maintenant configuré l'environnement et installé les dépendances nécessaires pour faire fonctionner le code.
+## Structure du répertoire
+Le projet est organisé en plusieurs répertoires dédiés :
+- **01_exploration** : Scripts pour l'exploration des données.
+- **02_nettoyage** : Scripts pour le nettoyage des données.
+- **03_analyse_descriptive** : Scripts pour l'analyse descriptive.
+- **04_questionnements** : Scripts pour le questionnement et l'analyse exploratoire.
+- **05_extension** : Scripts pour l'extension des données.
+- **05_graphe** : Scripts pour l'analyse par graphes.
 
+## Technologies et Bibliothèques
+Les bibliothèques utilisées incluent :
+- **Pandas** : Manipulation et analyse des données.
+- **Matplotlib** : Création de visualisations.
+- **Scikit-learn** : Prétraitement des données et clustering.
+- **NetworkX** : Analyse et visualisation des graphes.
+- **Community** : Détection de communautés dans les graphes.
 
-# Visualiser les résultats
+---
 
-Pour visualiser les résultats de chaque partie, 2 moyens s'offre à vous:
+# Utilisation et exécution
 
-- Exécuter les notebooks:
-- Exécuter les scripts python
+Les scripts peuvent être exécutés dans l'ordre des répertoires pour reproduire l'analyse.
 
-## Notebooks
+### Exécuter avec Jupyter Notebook
+Pour utiliser les notebooks :
+1. Installez **Jupyter Notebook**.
+2. Lancez avec la commande :
+   ```bash
+   jupyter notebook
+   ```
+3. Exécutez le notebook souhaité.
 
-Pour exécuter les notebooks, il faudra avoir installer **jupyter notebook**, 
-par la suite lancer le à travers la commande ci-dessous, après avoir activé l'environnement au préalable:
-
-```
-jupyter notebook
-```
-
-De là il vous suffira d'exécuter le notebook que vous voulez
-
-## Scripts python
-
-Pour celà à partir de la racine du projet il suffira de faire:
-
-```
+### Exécuter les scripts Python
+À partir de la racine du projet :
+```bash
 python 01_exploration/lots.py
 ```
 
-Cette commande affichera les résultats de l'exploration du lots
+### Visualisation des résultats
+Les deux méthodes génèrent des images qui seront visibles directement dans les notebooks ou dans le répertoire **images**. Les fichiers image sont nommés selon le numéro de chaque partie.
 
+---
 
-Les deux méthodes générerons des images pour les notebooks, elles y seront directement visible 
-mais vous pourrez les consulter aussi en allant dans le répertoire **images**
+## Contributions de l'équipe
+- **Abdelhadi Essabri** : Analyse des tables Agents, Names, LotBuyers, LotSuppliers.
+- **Bouchra El Houari** : Analyse de la table Criteria et restructuration des codes.
+- **Michel Marie Lamah** : Analyse des Lots et génération des graphiques.
 
-Pour les scripts, vous ne pourrez les consulter qu'à partir du répertoire **images**
+## Résultats
+L'analyse a permis d'extraire des informations sur les pratiques de marché, les schémas d'attribution, et la part des PME dans les marchés publics. Une partie de l'analyse s'est concentrée sur la détection de similitudes entre les lots et les agents avec des algorithmes de clustering et de détection d'anomalies.
 
-Les images de chaque parties sont précédées par le numéro de cette partie.
-
-
-
-=======
-# FOPPA_Project
->>>>>>> 5bbba429fd3e17d487c254fc9c8cc59c707a0942
